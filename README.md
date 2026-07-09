@@ -937,8 +937,8 @@ Questions? Open an issue on GitHub.
 
 ---
 
-**Last updated:** January 2024  
+**Last updated:** July 2026 
 **Python:** 3.11+  
 **Docker:** v24.0+  
 **TimescaleDB:** Latest  
-**Status:** ✅ Production-Ready (portfolio scope)
+**Status:** ✅ Production-Ready
