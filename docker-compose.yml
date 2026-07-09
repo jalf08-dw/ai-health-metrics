@@ -1,0 +1,79 @@
+version: '3.9'
+
+services:
+  # TimescaleDB: Time-series optimized PostgreSQL
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: health-metrics-db
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: health_metrics
+    volumes:
+      - ./schema/init.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - timescale_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - health-metrics-net
+
+  # Data Generator: Creates synthetic health data and seeds database
+  generator:
+    build:
+      context: .
+      dockerfile: Dockerfile.generator
+    container_name: health-metrics-generator
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      DB_HOST: timescaledb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: health_metrics
+      NUM_USERS: 100
+      DAYS_OF_DATA: 30
+      LOG_LEVEL: INFO
+    volumes:
+      - ./data/:/app/data/
+    networks:
+      - health-metrics-net
+
+  # FastAPI Server: Query endpoint + NL layer
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: health-metrics-api
+    depends_on:
+      - timescaledb
+      - generator
+    environment:
+      DB_HOST: timescaledb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: health_metrics
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - health-metrics-net
+
+volumes:
+  timescale_data:
+    driver: local
+
+networks:
+  health-metrics-net:
+    driver: bridge

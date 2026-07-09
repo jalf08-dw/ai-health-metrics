@@ -1,0 +1,65 @@
+version: '3.9'
+
+services:
+  # TimescaleDB for testing
+  timescaledb-test:
+    image: timescale/timescaledb:latest-pg15
+    container_name: health-metrics-db-test
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: health_metrics_test
+    volumes:
+      - ./schema/init.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - health-metrics-test-net
+
+  # Data Generator
+  generator-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.generator
+    container_name: health-metrics-generator-test
+    depends_on:
+      timescaledb-test:
+        condition: service_healthy
+    environment:
+      DB_HOST: timescaledb-test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: health_metrics_test
+      NUM_USERS: 5
+      DAYS_OF_DATA: 2
+      LOG_LEVEL: INFO
+    networks:
+      - health-metrics-test-net
+
+  # Test Runner
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: health-metrics-test-runner
+    depends_on:
+      - timescaledb-test
+      - generator-test
+    environment:
+      DB_HOST: timescaledb-test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: health_metrics_test
+    command: pytest tests/ -v --tb=short
+    volumes:
+      - .:/app
+    networks:
+      - health-metrics-test-net
+
+networks:
+  health-metrics-test-net:
+    driver: bridge
